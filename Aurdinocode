@@ -1,0 +1,124 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <Servo.h>
+
+// Define constants
+#define GROUND_FLOOR_SLOTS 4
+#define FIRST_FLOOR_SLOTS 4
+#define TOTAL_SLOTS 8
+
+int entranceSensor = 2; // Sensor at the entrance
+int groundFloorSensors[GROUND_FLOOR_SLOTS] = {3, 4, 5, 6}; // Ground floor sensors
+int firstFloorSensors[FIRST_FLOOR_SLOTS] = {7, 8, 9, 10}; // First floor sensors
+bool slotStatus[TOTAL_SLOTS] = {false};
+Servo gateServo;
+LiquidCrystal_I2C lcd(0x3F, 16, 2); // LCD address and size
+
+// Variables
+int availableSlot = -1; // To store the slot number of the first available space
+int currentFloor = 0;   // To store the current floor of the available slot
+
+void setup() {
+  // Initialize serial communication
+  Serial.begin(9600);
+
+  // Initialize entrance sensor
+  pinMode(entranceSensor, INPUT);
+
+  // Initialize slot sensors (ground and first floor)
+  for (int i = 0; i < GROUND_FLOOR_SLOTS; i++) {
+    pinMode(groundFloorSensors[i], INPUT);
+  }
+  for (int i = 0; i < FIRST_FLOOR_SLOTS; i++) {
+    pinMode(firstFloorSensors[i], INPUT);
+  }
+
+  // Initialize servo motor
+  gateServo.attach(11);
+  gateServo.write(0); // Initial position: closed
+
+  // Initialize LCD
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("V PARKING YARD");
+  delay(2000);
+  lcd.clear();
+}
+
+void loop() {
+  // Check for vehicle at entrance
+  if (digitalRead(entranceSensor) == LOW) { // Vehicle detected at entrance
+    Serial.println("Vehicle detected at entrance.");
+    
+    // Search for available slot, prioritize ground floor
+    availableSlot = -1;  // Reset available slot
+    currentFloor = 0;    // Start with ground floor
+
+    // Check ground floor slots first
+    Serial.println("Searching for available slot on ground floor...");
+    for (int i = 0; i < GROUND_FLOOR_SLOTS; i++) {
+      if (digitalRead(groundFloorSensors[i]) == HIGH) { // Slot is available
+        availableSlot = i;
+        currentFloor = 1; // Ground floor
+        break; // Stop searching once an available slot is found
+      }
+    }
+
+    // If no slot found on the ground floor, check first floor
+    if (availableSlot == -1) {
+      Serial.println("No available slot on ground floor. Checking first floor...");
+      for (int i = 0; i < FIRST_FLOOR_SLOTS; i++) {
+        if (digitalRead(firstFloorSensors[i]) == HIGH) { // Slot is available
+          availableSlot = i + GROUND_FLOOR_SLOTS; // Adjust index for first floor
+          currentFloor = 2; // First floor
+          break; // Stop searching once an available slot is found
+        }
+      }
+    }
+
+    // If an available slot is found, open the gate and display on LCD
+    if (availableSlot != -1) {
+      Serial.print("Available slot found at ");
+      Serial.print(currentFloor == 1 ? "Ground Floor" : "First Floor");
+      Serial.print(", slot ");
+      Serial.println(availableSlot + 1); // Display slot number (1-based index)
+
+      // Open the gate
+      gateServo.write(90); // Open gate
+      Serial.println("Gate opened for 5 seconds...");
+      
+      lcd.clear();
+      // Display floor name and slot number on the same line
+      lcd.setCursor(0, 0);
+      if (currentFloor == 1) {
+        lcd.print("Ground Floor ");
+      } else {
+        lcd.print("First Floor ");
+      }
+      lcd.print(availableSlot + 1); // Display slot number (1-based)
+
+      delay(5000); // Keep the gate open for 5 seconds
+      gateServo.write(0);  // Close gate
+      Serial.println("Gate closed.");
+
+      // Display welcome message after gate closes
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Welcome to");
+      lcd.setCursor(0, 1);
+      lcd.print("V PARKING YARD");
+      delay(2000); // Display welcome message for 2 seconds
+    } else {
+
+      // If no slot is found (parking full)
+      Serial.println("Parking Full! No slots available.");
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Parking Full");
+      delay(2000); // Display for 2 seconds before checking again
+    }
+  }
+
+  delay(500); // Adjust the delay for responsiveness
+}
